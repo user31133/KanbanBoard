@@ -452,11 +452,17 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        }
 
        console.log(`Moving issue #${issueNumber} to ${overContainer}`)
+       console.log(`Current labels:`, movedItem.labels.map(l => l.name))
        console.log(`Labels to add:`, labelsToAdd)
        console.log(`Labels to remove:`, labelsToRemove)
 
-       // 1. Remove old labels
-       for (const label of labelsToRemove) {
+       // 1. Remove old labels (only if they exist on the issue)
+       const existingLabelNames = movedItem.labels.map(l => l.name)
+       const labelsToActuallyRemove = labelsToRemove.filter(label => existingLabelNames.includes(label))
+
+       console.log(`Labels that will actually be removed:`, labelsToActuallyRemove)
+
+       for (const label of labelsToActuallyRemove) {
           try {
              await octokit.rest.issues.removeLabel({
                 owner,
@@ -466,8 +472,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
              })
              console.log(`Removed label: ${label}`)
           } catch (e: any) {
-             // Ignore 404 if label didn't exist
-             console.log(`Label ${label} didn't exist or couldn't be removed:`, e.message)
+             console.error(`Failed to remove label ${label}:`, e.message)
           }
        }
 

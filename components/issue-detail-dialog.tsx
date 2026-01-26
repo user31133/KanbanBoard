@@ -275,35 +275,53 @@ export function IssueDetailDialog({
   }
 
   const handleChangeDepartment = async (newDepartment: string) => {
-    if (!token || !currentIssue) return
+    if (!token || !currentIssue) {
+      console.error('Cannot change department: missing token or issue')
+      return
+    }
     setLoading(true)
     try {
       const octokit = getOctokit(token)
 
+      console.log('=== Changing Department ===')
+      console.log('Current department:', currentDepartment?.name || 'none')
+      console.log('New department:', newDepartment)
+      console.log('Issue #:', currentIssue.number)
+
       // Remove current department if exists
       if (currentDepartment) {
-        console.log('Removing current department:', currentDepartment.name)
-        await octokit.rest.issues.removeLabel({
-          owner,
-          repo,
-          issue_number: currentIssue.number,
-          name: currentDepartment.name,
-        })
+        console.log('Step 1: Removing current department:', currentDepartment.name)
+        try {
+          await octokit.rest.issues.removeLabel({
+            owner,
+            repo,
+            issue_number: currentIssue.number,
+            name: currentDepartment.name,
+          })
+          console.log('✓ Current department removed successfully')
+        } catch (removeError: any) {
+          console.error('Failed to remove current department:', removeError)
+          // Continue anyway - the label might not exist
+        }
       }
 
       // Add new department
-      console.log('Adding new department:', newDepartment)
+      console.log('Step 2: Adding new department:', newDepartment)
       await octokit.rest.issues.addLabels({
         owner,
         repo,
         issue_number: currentIssue.number,
         labels: [newDepartment],
       })
+      console.log('✓ New department added successfully')
 
+      console.log('Step 3: Refreshing issue data...')
       await refreshIssue()
-    } catch (error) {
-      console.error("Failed to change department", error)
-      alert("Failed to change department")
+      console.log('✓ Issue refreshed')
+      console.log('=== Department Change Complete ===')
+    } catch (error: any) {
+      console.error("Failed to change department:", error)
+      alert(`Failed to change department: ${error.message || 'Unknown error'}`)
     } finally {
       setLoading(false)
     }
@@ -536,23 +554,27 @@ export function IssueDetailDialog({
           </div>
 
           {/* Department */}
-          {departmentLabels.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  <Label>Department</Label>
-                </div>
-                {currentDepartment && (
-                  <button
-                    onClick={() => handleRemoveLabel(currentDepartment.name)}
-                    disabled={loading}
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Clear
-                  </button>
-                )}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                <Label>Department</Label>
               </div>
+              {currentDepartment && (
+                <button
+                  onClick={() => handleRemoveLabel(currentDepartment.name)}
+                  disabled={loading}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {departmentLabels.length === 0 ? (
+              <div className="text-xs text-muted-foreground border rounded-md p-3 bg-muted/30">
+                No departments available. Create labels with "dept:" prefix (e.g., "dept:frontend", "dept:backend") in Label Management.
+              </div>
+            ) : (
               <div className="flex flex-col gap-1.5">
                 {departmentLabels.map((dept) => {
                   const isSelected = currentDepartment?.name === dept.name
@@ -606,8 +628,8 @@ export function IssueDetailDialog({
                   )
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Assignees */}
