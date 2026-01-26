@@ -9,6 +9,8 @@ import { Loader2, ArrowLeft, LayoutDashboard, Plus, Filter, X, Tag, Calendar, Se
 import { Button } from "@/components/ui/button"
 import { NewIssueDialog } from "@/components/new-issue-dialog"
 import { IssueDetailDialog } from "@/components/issue-detail-dialog"
+import { LabelManagementDialog } from "@/components/label-management-dialog"
+import { MilestoneManagementDialog } from "@/components/milestone-management-dialog"
 import {
   Kanban,
   KanbanBoard,
@@ -93,7 +95,7 @@ function IssueCard({ issue, asHandle, onClick, onAuthorClick, onAssigneeClick }:
     <div
       className="rounded-md border bg-card p-3 shadow-xs hover:border-primary/50 transition-colors group cursor-pointer"
       onClick={(e) => {
-        if (onClick && !asHandle) {
+        if (onClick) {
           e.stopPropagation()
           onClick()
         }
@@ -144,7 +146,15 @@ function IssueCard({ issue, asHandle, onClick, onAuthorClick, onAssigneeClick }:
         {/* Assignees */}
         <div className="flex items-center justify-between text-muted-foreground text-xs pt-1">
           {issue.assignees.length === 0 ? (
-            <div className="flex items-center gap-1.5">
+            <div
+              className="flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors"
+              onClick={(e) => {
+                e.stopPropagation()
+                if (onClick) {
+                  onClick()
+                }
+              }}
+            >
               <Avatar className="size-4 opacity-50">
                 <AvatarFallback>?</AvatarFallback>
               </Avatar>
@@ -263,6 +273,8 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
   const [newIssueDialogOpen, setNewIssueDialogOpen] = useState(false)
   const [newIssueDefaultStatus, setNewIssueDefaultStatus] = useState("todo")
+  const [labelManagementOpen, setLabelManagementOpen] = useState(false)
+  const [milestoneManagementOpen, setMilestoneManagementOpen] = useState(false)
 
   // Filters
   const [filterAuthor, setFilterAuthor] = useState<string | null>(null)
@@ -275,17 +287,29 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
       setLoading(true)
       try {
         const octokit = getOctokit(token)
-        const response = await octokit.rest.issues.listForRepo({
-          owner,
-          repo,
-          state: 'open',
-          per_page: 100,
-          sort: 'created',
-          direction: 'desc'
-        })
 
-        const fetchedIssues = response.data as Issue[]
-        console.log("Fetched issues:", fetchedIssues.length)
+        // Fetch both open and closed issues
+        const [openResponse, closedResponse] = await Promise.all([
+          octokit.rest.issues.listForRepo({
+            owner,
+            repo,
+            state: 'open',
+            per_page: 100,
+            sort: 'created',
+            direction: 'desc'
+          }),
+          octokit.rest.issues.listForRepo({
+            owner,
+            repo,
+            state: 'closed',
+            per_page: 30, // Fetch last 30 closed issues
+            sort: 'updated',
+            direction: 'desc'
+          })
+        ])
+
+        const fetchedIssues = [...openResponse.data, ...closedResponse.data] as Issue[]
+        console.log("Fetched issues:", fetchedIssues.length, "(open + closed)")
         setIssues(fetchedIssues)
 
         // Organize into columns
@@ -374,22 +398,27 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        const issueNumber = movedItem.number
 
        // Determine labels to add/remove
-       // Simple logic: 
-       // To Do -> Remove 'status:in-progress', 'status:done'
-       // In Progress -> Add 'status:in-progress', Remove 'status:done'
-       // Done -> Add 'status:done', Remove 'status:in-progress'
-       
+       // Simple logic:
+       // To Do -> Remove 'status:in-progress', 'status:done', reopen if closed
+       // In Progress -> Add 'status:in-progress', Remove 'status:done', reopen if closed
+       // Done -> Add 'status:done', Remove 'status:in-progress', CLOSE the issue
+
        const labelsToRemove: string[] = []
        const labelsToAdd: string[] = []
+       let shouldClose = false
+       let shouldReopen = false
 
        if (overContainer === COLUMN_IDS.IN_PROGRESS) {
           labelsToAdd.push('status:in-progress')
           labelsToRemove.push('status:done')
+          shouldReopen = movedItem.state === 'closed'
        } else if (overContainer === COLUMN_IDS.DONE) {
           labelsToAdd.push('status:done')
           labelsToRemove.push('status:in-progress')
+          shouldClose = movedItem.state === 'open'
        } else {
           labelsToRemove.push('status:in-progress', 'status:done')
+          shouldReopen = movedItem.state === 'closed'
        }
 
        // 1. Remove old labels
@@ -415,6 +444,28 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
              labels: labelsToAdd
           })
        }
+
+       // 3. Close or reopen the issue
+       if (shouldClose) {
+          await octokit.rest.issues.update({
+             owner,
+             repo,
+             issue_number: issueNumber,
+             state: 'closed'
+          })
+          console.log(`Issue #${issueNumber} closed automatically (moved to Done)`)
+       } else if (shouldReopen) {
+          await octokit.rest.issues.update({
+             owner,
+             repo,
+             issue_number: issueNumber,
+             state: 'open'
+          })
+          console.log(`Issue #${issueNumber} reopened automatically (moved out of Done)`)
+       }
+
+       // Refresh to get updated state
+       fetchIssues()
 
     } catch (error) {
        console.error("Failed to move issue", error)
@@ -484,7 +535,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => window.open(`https://github.com/${owner}/${repo}/labels`, '_blank')}
+                    onClick={() => setLabelManagementOpen(true)}
                   >
                     <Tag className="h-4 w-4 mr-2" />
                     Manage Labels
@@ -492,7 +543,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => window.open(`https://github.com/${owner}/${repo}/milestones`, '_blank')}
+                    onClick={() => setMilestoneManagementOpen(true)}
                   >
                     <Calendar className="h-4 w-4 mr-2" />
                     Manage Milestones
@@ -671,6 +722,22 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
          onOpenChange={setNewIssueDialogOpen}
          onIssueCreated={fetchIssues}
          defaultStatus={newIssueDefaultStatus}
+       />
+
+       <LabelManagementDialog
+         owner={owner}
+         repo={repo}
+         open={labelManagementOpen}
+         onOpenChange={setLabelManagementOpen}
+         onLabelsUpdated={fetchIssues}
+       />
+
+       <MilestoneManagementDialog
+         owner={owner}
+         repo={repo}
+         open={milestoneManagementOpen}
+         onOpenChange={setMilestoneManagementOpen}
+         onMilestonesUpdated={fetchIssues}
        />
     </div>
   )

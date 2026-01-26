@@ -77,15 +77,16 @@ export function NewIssueDialog({ owner, repo, onIssueCreated, open: controlledOp
 
       console.log("Issue created successfully:", newIssue.data)
 
-      setOpen(false)
+      // Reset form
       setTitle("")
       setDescription("")
       setStatus("todo")
 
-      // Wait a moment for GitHub API to update, then refresh
-      setTimeout(() => {
-        onIssueCreated()
-      }, 500)
+      // Refresh board data immediately
+      await onIssueCreated()
+
+      // Close dialog after refresh
+      setOpen(false)
 
     } catch (error) {
       console.error("Failed to create issue", error)
@@ -97,12 +98,6 @@ export function NewIssueDialog({ owner, repo, onIssueCreated, open: controlledOp
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          New Issue
-        </Button>
-      </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Create New Issue</DialogTitle>

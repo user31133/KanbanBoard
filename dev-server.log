@@ -220,3 +220,21 @@ LandingPage component rendering
  GET /api/auth/session 200 in 61ms (compile: 37ms, render: 24ms)
  GET /board/nechhuu/ward-mcp 200 in 88ms (compile: 23ms, render: 65ms)
 ✓ Compiled in 398ms
+ GET /api/auth/session 200 in 437ms (compile: 208ms, render: 229ms)
+ GET /api/auth/session 200 in 102ms (compile: 49ms, render: 52ms)
+✓ Compiled in 217ms
+ GET /api/auth/session 200 in 49ms (compile: 23ms, render: 26ms)
+✓ Compiled in 121ms
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 347ms
+ GET /api/auth/session 200 in 203ms (compile: 92ms, render: 111ms)
+ POST /api/auth/_log 200 in 24ms (compile: 10ms, render: 14ms)
+ GET /board/nechhuu/ward-mcp 200 in 1937ms (compile: 570ms, render: 1367ms)
+ GET /api/auth/session 200 in 27ms (compile: 4ms, render: 23ms)
+✓ Compiled in 100ms
+✓ Compiled in 152ms
+✓ Compiled in 81ms
+✓ Compiled in 375ms
+✓ Compiled in 101ms
+ GET /api/auth/session 200 in 2.1s (compile: 1374ms, render: 738ms)
+ GET /api/auth/session 200 in 294ms (compile: 177ms, render: 117ms)

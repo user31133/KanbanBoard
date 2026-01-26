@@ -88,6 +88,7 @@ export function IssueDetailDialog({
   const [collaborators, setCollaborators] = useState<User[]>([])
   const [milestones, setMilestones] = useState<Milestone[]>([])
   const [availableLabels, setAvailableLabels] = useState<{ name: string; color: string }[]>([])
+  const [currentIssue, setCurrentIssue] = useState<Issue | null>(issue)
 
   // Editable fields
   const [editingTitle, setEditingTitle] = useState(false)
@@ -97,10 +98,29 @@ export function IssueDetailDialog({
 
   useEffect(() => {
     if (issue) {
+      setCurrentIssue(issue)
       setTitleValue(issue.title)
       setBodyValue(issue.body || "")
     }
   }, [issue])
+
+  const refreshIssue = async () => {
+    if (!token || !currentIssue) return
+    try {
+      const octokit = getOctokit(token)
+      const response = await octokit.rest.issues.get({
+        owner,
+        repo,
+        issue_number: currentIssue.number,
+      })
+      setCurrentIssue(response.data as Issue)
+      setTitleValue(response.data.title)
+      setBodyValue(response.data.body || "")
+      onIssueUpdated()
+    } catch (error) {
+      console.error("Failed to refresh issue", error)
+    }
+  }
 
   useEffect(() => {
     if (open && token) {
@@ -154,17 +174,17 @@ export function IssueDetailDialog({
   }
 
   const handleAssignUser = async (username: string) => {
-    if (!token || !issue) return
+    if (!token || !currentIssue) return
     setLoading(true)
     try {
       const octokit = getOctokit(token)
       await octokit.rest.issues.addAssignees({
         owner,
         repo,
-        issue_number: issue.number,
+        issue_number: currentIssue.number,
         assignees: [username],
       })
-      onIssueUpdated()
+      await refreshIssue()
     } catch (error) {
       console.error("Failed to assign user", error)
       alert("Failed to assign user")
@@ -174,17 +194,17 @@ export function IssueDetailDialog({
   }
 
   const handleUnassignUser = async (username: string) => {
-    if (!token || !issue) return
+    if (!token || !currentIssue) return
     setLoading(true)
     try {
       const octokit = getOctokit(token)
       await octokit.rest.issues.removeAssignees({
         owner,
         repo,
-        issue_number: issue.number,
+        issue_number: currentIssue.number,
         assignees: [username],
       })
-      onIssueUpdated()
+      await refreshIssue()
     } catch (error) {
       console.error("Failed to unassign user", error)
       alert("Failed to unassign user")
@@ -194,17 +214,17 @@ export function IssueDetailDialog({
   }
 
   const handleSetMilestone = async (milestoneNumber: number | null) => {
-    if (!token || !issue) return
+    if (!token || !currentIssue) return
     setLoading(true)
     try {
       const octokit = getOctokit(token)
       await octokit.rest.issues.update({
         owner,
         repo,
-        issue_number: issue.number,
+        issue_number: currentIssue.number,
         milestone: milestoneNumber,
       })
-      onIssueUpdated()
+      await refreshIssue()
     } catch (error) {
       console.error("Failed to set milestone", error)
       alert("Failed to set milestone")
@@ -214,17 +234,17 @@ export function IssueDetailDialog({
   }
 
   const handleAddLabel = async (labelName: string) => {
-    if (!token || !issue) return
+    if (!token || !currentIssue) return
     setLoading(true)
     try {
       const octokit = getOctokit(token)
       await octokit.rest.issues.addLabels({
         owner,
         repo,
-        issue_number: issue.number,
+        issue_number: currentIssue.number,
         labels: [labelName],
       })
-      onIssueUpdated()
+      await refreshIssue()
     } catch (error) {
       console.error("Failed to add label", error)
       alert("Failed to add label")
@@ -234,17 +254,17 @@ export function IssueDetailDialog({
   }
 
   const handleRemoveLabel = async (labelName: string) => {
-    if (!token || !issue) return
+    if (!token || !currentIssue) return
     setLoading(true)
     try {
       const octokit = getOctokit(token)
       await octokit.rest.issues.removeLabel({
         owner,
         repo,
-        issue_number: issue.number,
+        issue_number: currentIssue.number,
         name: labelName,
       })
-      onIssueUpdated()
+      await refreshIssue()
     } catch (error) {
       console.error("Failed to remove label", error)
       alert("Failed to remove label")
@@ -254,18 +274,18 @@ export function IssueDetailDialog({
   }
 
   const handleUpdateTitle = async () => {
-    if (!token || !issue || titleValue.trim() === "") return
+    if (!token || !currentIssue || titleValue.trim() === "") return
     setLoading(true)
     try {
       const octokit = getOctokit(token)
       await octokit.rest.issues.update({
         owner,
         repo,
-        issue_number: issue.number,
+        issue_number: currentIssue.number,
         title: titleValue,
       })
       setEditingTitle(false)
-      onIssueUpdated()
+      await refreshIssue()
     } catch (error) {
       console.error("Failed to update title", error)
       alert("Failed to update title")
@@ -275,18 +295,18 @@ export function IssueDetailDialog({
   }
 
   const handleUpdateBody = async () => {
-    if (!token || !issue) return
+    if (!token || !currentIssue) return
     setLoading(true)
     try {
       const octokit = getOctokit(token)
       await octokit.rest.issues.update({
         owner,
         repo,
-        issue_number: issue.number,
+        issue_number: currentIssue.number,
         body: bodyValue,
       })
       setEditingBody(false)
-      onIssueUpdated()
+      await refreshIssue()
     } catch (error) {
       console.error("Failed to update description", error)
       alert("Failed to update description")
@@ -296,7 +316,7 @@ export function IssueDetailDialog({
   }
 
   const handleCloseIssue = async () => {
-    if (!token || !issue) return
+    if (!token || !currentIssue) return
     if (!confirm("Are you sure you want to close this issue?")) return
     setLoading(true)
     try {
@@ -304,10 +324,10 @@ export function IssueDetailDialog({
       await octokit.rest.issues.update({
         owner,
         repo,
-        issue_number: issue.number,
+        issue_number: currentIssue.number,
         state: "closed",
       })
-      onIssueUpdated()
+      await refreshIssue()
       onOpenChange(false)
     } catch (error) {
       console.error("Failed to close issue", error)
@@ -318,17 +338,17 @@ export function IssueDetailDialog({
   }
 
   const handleReopenIssue = async () => {
-    if (!token || !issue) return
+    if (!token || !currentIssue) return
     setLoading(true)
     try {
       const octokit = getOctokit(token)
       await octokit.rest.issues.update({
         owner,
         repo,
-        issue_number: issue.number,
+        issue_number: currentIssue.number,
         state: "open",
       })
-      onIssueUpdated()
+      await refreshIssue()
     } catch (error) {
       console.error("Failed to reopen issue", error)
       alert("Failed to reopen issue")
@@ -337,15 +357,25 @@ export function IssueDetailDialog({
     }
   }
 
-  if (!issue) return null
+  if (!currentIssue) return null
 
-  const assignedLogins = issue.assignees.map(a => a.login)
+  const assignedLogins = currentIssue.assignees.map(a => a.login)
   const unassignedCollaborators = collaborators.filter(
     c => !assignedLogins.includes(c.login)
   )
 
-  const issueLabels = issue.labels.map(l => l.name)
+  const issueLabels = currentIssue.labels.map(l => l.name)
   const unusedLabels = availableLabels.filter(l => !issueLabels.includes(l.name))
+
+  // Department labels - dynamic based on "dept:" prefix
+  const departmentLabels = availableLabels.filter(l => l.name.startsWith('dept:'))
+  const currentDepartment = currentIssue.labels.find(l => l.name.startsWith('dept:'))
+  const otherLabels = currentIssue.labels.filter(l =>
+    !l.name.startsWith('dept:') && !l.name.startsWith('status:')
+  )
+  const unusedOtherLabels = unusedLabels.filter(l =>
+    !l.name.startsWith('dept:')
+  )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -364,7 +394,7 @@ export function IssueDetailDialog({
                       if (e.key === "Enter") handleUpdateTitle()
                       if (e.key === "Escape") {
                         setEditingTitle(false)
-                        setTitleValue(issue.title)
+                        setTitleValue(currentIssue.title)
                       }
                     }}
                   />
@@ -376,7 +406,7 @@ export function IssueDetailDialog({
                     variant="ghost"
                     onClick={() => {
                       setEditingTitle(false)
-                      setTitleValue(issue.title)
+                      setTitleValue(currentIssue.title)
                     }}
                   >
                     <X className="h-4 w-4" />
@@ -384,7 +414,7 @@ export function IssueDetailDialog({
                 </div>
               ) : (
                 <div className="flex items-center gap-2 group">
-                  <DialogTitle className="text-xl">{issue.title}</DialogTitle>
+                  <DialogTitle className="text-xl">{currentIssue.title}</DialogTitle>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -398,16 +428,16 @@ export function IssueDetailDialog({
               <DialogDescription className="flex items-center gap-2 mt-2 flex-wrap">
                 <Badge
                   variant="secondary"
-                  className={issue.state === "open" ? "bg-green-500 text-white" : "bg-purple-500 text-white"}
+                  className={currentIssue.state === "open" ? "bg-green-500 text-white" : "bg-purple-500 text-white"}
                 >
-                  {issue.state === "open" ? "Open" : "Closed"}
+                  {currentIssue.state === "open" ? "Open" : "Closed"}
                 </Badge>
-                <span className="text-xs font-mono">#{issue.number}</span>
+                <span className="text-xs font-mono">#{currentIssue.number}</span>
                 <span>•</span>
-                <span>Opened by {issue.user.login}</span>
+                <span>Opened by {currentIssue.user.login}</span>
                 <span>•</span>
                 <a
-                  href={issue.html_url}
+                  href={currentIssue.html_url}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1 text-primary hover:underline"
@@ -455,7 +485,7 @@ export function IssueDetailDialog({
                     variant="outline"
                     onClick={() => {
                       setEditingBody(false)
-                      setBodyValue(issue.body || "")
+                      setBodyValue(currentIssue.body || "")
                     }}
                   >
                     Cancel
@@ -464,10 +494,82 @@ export function IssueDetailDialog({
               </div>
             ) : (
               <div className="text-sm text-muted-foreground whitespace-pre-wrap border rounded-md p-3 bg-muted/30 min-h-[80px]">
-                {issue.body || "No description provided."}
+                {currentIssue.body || "No description provided."}
               </div>
             )}
           </div>
+
+          {/* Department */}
+          {departmentLabels.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                  <Label>Department</Label>
+                </div>
+                {currentDepartment && (
+                  <button
+                    onClick={() => handleRemoveLabel(currentDepartment.name)}
+                    disabled={loading}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {departmentLabels.map((dept) => {
+                  const isSelected = currentDepartment?.name === dept.name
+                  return (
+                    <button
+                      key={dept.name}
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        if (isSelected) {
+                          handleRemoveLabel(dept.name)
+                        } else {
+                          if (currentDepartment) {
+                            handleRemoveLabel(currentDepartment.name)
+                          }
+                          handleAddLabel(dept.name)
+                        }
+                      }}
+                      disabled={loading}
+                      className={`
+                        px-3 py-2.5 text-left text-sm rounded border transition-all cursor-pointer
+                        ${isSelected
+                          ? 'border-2'
+                          : 'border hover:shadow-sm'
+                        }
+                        disabled:opacity-50 disabled:cursor-not-allowed
+                      `}
+                      style={isSelected ? {
+                        backgroundColor: `#${dept.color}10`,
+                        borderColor: `#${dept.color}`,
+                      } : {
+                        backgroundColor: 'transparent',
+                        borderColor: 'hsl(var(--border))'
+                      }}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: `#${dept.color}` }}
+                        />
+                        <span className="flex-1">{dept.name.replace('dept:', '')}</span>
+                        {isSelected && (
+                          <Check className="h-4 w-4 flex-shrink-0" style={{ color: `#${dept.color}` }} />
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Assignees */}
@@ -477,10 +579,10 @@ export function IssueDetailDialog({
                 <Label>Assignees</Label>
               </div>
               <div className="space-y-2">
-                {issue.assignees.length === 0 && (
+                {currentIssue.assignees.length === 0 && (
                   <p className="text-xs text-muted-foreground">No one assigned</p>
                 )}
-                {issue.assignees.map((assignee) => (
+                {currentIssue.assignees.map((assignee) => (
                   <div
                     key={assignee.login}
                     className="flex items-center justify-between gap-2 p-2 rounded-md border bg-card"
@@ -533,13 +635,13 @@ export function IssueDetailDialog({
                 <Label>Milestone</Label>
               </div>
               <div className="space-y-2">
-                {issue.milestone ? (
+                {currentIssue.milestone ? (
                   <div className="flex items-center justify-between gap-2 p-2 rounded-md border bg-card">
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium">{issue.milestone.title}</span>
-                      {issue.milestone.due_on && (
+                      <span className="text-sm font-medium">{currentIssue.milestone.title}</span>
+                      {currentIssue.milestone.due_on && (
                         <span className="text-xs text-muted-foreground">
-                          Due {new Date(issue.milestone.due_on).toLocaleDateString()}
+                          Due {new Date(currentIssue.milestone.due_on).toLocaleDateString()}
                         </span>
                       )}
                     </div>
@@ -585,10 +687,10 @@ export function IssueDetailDialog({
             </div>
             <div className="space-y-2">
               <div className="flex flex-wrap gap-2">
-                {issue.labels.length === 0 && (
+                {otherLabels.length === 0 && (
                   <p className="text-xs text-muted-foreground">No labels</p>
                 )}
-                {issue.labels.map((label) => (
+                {otherLabels.map((label) => (
                   <Badge
                     key={label.id}
                     variant="outline"
@@ -612,13 +714,13 @@ export function IssueDetailDialog({
                   </Badge>
                 ))}
               </div>
-              {unusedLabels.length > 0 && (
+              {unusedOtherLabels.length > 0 && (
                 <Select onValueChange={handleAddLabel} disabled={loading}>
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue placeholder="Add label..." />
                   </SelectTrigger>
                   <SelectContent position="popper" sideOffset={4}>
-                    {unusedLabels.map((label) => (
+                    {unusedOtherLabels.map((label) => (
                       <SelectItem key={label.name} value={label.name}>
                         <div className="flex items-center gap-2">
                           <div
@@ -639,7 +741,7 @@ export function IssueDetailDialog({
         {/* Action Buttons */}
         <div className="flex items-center justify-between pt-4 border-t">
           <div className="flex gap-2">
-            {issue.state === "open" ? (
+            {currentIssue.state === "open" ? (
               <Button
                 variant="destructive"
                 size="sm"
@@ -663,7 +765,7 @@ export function IssueDetailDialog({
             )}
           </div>
           <div className="text-xs text-muted-foreground">
-            Last updated {new Date(issue.updated_at).toLocaleString()}
+            Last updated {new Date(currentIssue.updated_at).toLocaleString()}
           </div>
         </div>
 
