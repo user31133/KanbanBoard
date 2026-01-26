@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, ExternalLink, Calendar, Users, Tag, X, Edit2, Check, XCircle } from "lucide-react"
+import { Loader2, ExternalLink, Calendar, Users, Tag, X, Edit2, Check, XCircle, Building2 } from "lucide-react"
 
 interface Issue {
   id: number
@@ -504,9 +504,7 @@ export function IssueDetailDialog({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
+                  <Building2 className="h-4 w-4" />
                   <Label>Department</Label>
                 </div>
                 {currentDepartment && (
@@ -556,12 +554,17 @@ export function IssueDetailDialog({
                     >
                       <div className="flex items-center gap-2.5">
                         <div
-                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          className="size-2.5 rounded-full flex-shrink-0"
                           style={{ backgroundColor: `#${dept.color}` }}
                         />
-                        <span className="flex-1">{dept.name.replace('dept:', '')}</span>
+                        <span className="flex-1 font-medium tracking-tight">
+                          {dept.name.replace('dept:', '')}
+                        </span>
                         {isSelected && (
-                          <Check className="h-4 w-4 flex-shrink-0" style={{ color: `#${dept.color}` }} />
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] font-bold uppercase" style={{ color: `#${dept.color}` }}>Selected</span>
+                            <Check className="h-4 w-4 flex-shrink-0" style={{ color: `#${dept.color}` }} />
+                          </div>
                         )}
                       </div>
                     </button>

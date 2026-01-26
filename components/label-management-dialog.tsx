@@ -127,7 +127,7 @@ export function LabelManagementDialog({
         name,
       })
       await fetchLabels()
-      onLabelsUpdated()
+      await onLabelsUpdated()
     } catch (error) {
       console.error("Failed to delete label", error)
       alert("Failed to delete label")

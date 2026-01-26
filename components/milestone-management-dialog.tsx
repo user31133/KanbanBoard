@@ -91,7 +91,7 @@ export function MilestoneManagementDialog({
       setNewMilestone({ title: "", description: "", due_on: null, state: "open" })
       setShowNewForm(false)
       await fetchMilestones()
-      onMilestonesUpdated()
+      await onMilestonesUpdated()
     } catch (error) {
       console.error("Failed to create milestone", error)
       alert("Failed to create milestone")
@@ -116,7 +116,7 @@ export function MilestoneManagementDialog({
       })
       setEditingMilestone(null)
       await fetchMilestones()
-      onMilestonesUpdated()
+      await onMilestonesUpdated()
     } catch (error) {
       console.error("Failed to update milestone", error)
       alert("Failed to update milestone")
@@ -137,7 +137,7 @@ export function MilestoneManagementDialog({
         milestone_number: number,
       })
       await fetchMilestones()
-      onMilestonesUpdated()
+      await onMilestonesUpdated()
     } catch (error) {
       console.error("Failed to delete milestone", error)
       alert("Failed to delete milestone")

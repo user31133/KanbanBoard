@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-hook"
 import { getOctokit } from "@/lib/github"
 import { NavBar } from "@/components/ui/tubelight-navbar"
-import { Loader2, ArrowLeft, LayoutDashboard, Plus, Filter, X, Tag, Calendar, Settings } from "lucide-react"
+import { Loader2, ArrowLeft, LayoutDashboard, Plus, Filter, X, Tag, Calendar, Settings, Building2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { NewIssueDialog } from "@/components/new-issue-dialog"
 import { IssueDetailDialog } from "@/components/issue-detail-dialog"
@@ -111,26 +111,56 @@ function IssueCard({ issue, asHandle, onClick, onAuthorClick, onAssigneeClick }:
           </span>
         </div>
 
-        {/* Labels */}
-        <div className="flex flex-wrap gap-1">
-          {issue.labels.filter(l => !l.name.startsWith('status:')).slice(0, 3).map(label => (
-             <span
-              key={label.id}
-              className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-              style={{
-                backgroundColor: `#${label.color}20`,
-                color: `#${label.color}`,
-                border: `1px solid #${label.color}40`
-              }}
-            >
-              {label.name}
-             </span>
-          ))}
-          {issue.labels.filter(l => !l.name.startsWith('status:')).length > 3 && (
-            <span className="text-[10px] px-1.5 py-0.5 text-muted-foreground">
-              +{issue.labels.filter(l => !l.name.startsWith('status:')).length - 3}
-            </span>
+        {/* Labels & Department */}
+        <div className="flex flex-col gap-2">
+          {/* Department Badge */}
+          {issue.labels.find(l => l.name.startsWith('dept:')) && (
+            <div className="flex items-center">
+              {(() => {
+                const dept = issue.labels.find(l => l.name.startsWith('dept:'))!;
+                return (
+                  <div
+                    className="flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold border"
+                    style={{
+                      backgroundColor: `#${dept.color}15`,
+                      color: `#${dept.color}`,
+                      borderColor: `#${dept.color}40`
+                    }}
+                  >
+                    <Building2 className="size-3" />
+                    <span className="uppercase tracking-wider">
+                      {dept.name.replace('dept:', '')}
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
           )}
+
+          {/* Other Labels */}
+          <div className="flex flex-wrap gap-1">
+            {issue.labels
+              .filter(l => !l.name.startsWith('status:') && !l.name.startsWith('dept:'))
+              .slice(0, 3)
+              .map(label => (
+                <span
+                  key={label.id}
+                  className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                  style={{
+                    backgroundColor: `#${label.color}20`,
+                    color: `#${label.color}`,
+                    border: `1px solid #${label.color}40`
+                  }}
+                >
+                  {label.name}
+                </span>
+              ))}
+            {issue.labels.filter(l => !l.name.startsWith('status:') && !l.name.startsWith('dept:')).length > 3 && (
+              <span className="text-[10px] px-1.5 py-0.5 text-muted-foreground">
+                +{issue.labels.filter(l => !l.name.startsWith('status:') && !l.name.startsWith('dept:')).length - 3}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Milestone */}
