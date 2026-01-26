@@ -197,13 +197,14 @@ function IssueCard({ issue, asHandle, onClick, onAuthorClick, onAssigneeClick }:
   )
 }
 
-function BoardColumn({ value, issues, isOverlay, onIssueClick, onAuthorClick, onAssigneeClick }: {
+function BoardColumn({ value, issues, isOverlay, onIssueClick, onAuthorClick, onAssigneeClick, onAddItem }: {
   value: string;
   issues: Issue[];
   isOverlay?: boolean;
   onIssueClick?: (issue: Issue) => void;
   onAuthorClick?: (author: string) => void;
   onAssigneeClick?: (assignee: string) => void;
+  onAddItem?: () => void;
 }) {
   return (
     <KanbanColumn value={value} className="rounded-xl border bg-muted/40 p-3 shadow-sm h-full flex flex-col gap-3 min-w-[300px]">
@@ -234,7 +235,11 @@ function BoardColumn({ value, issues, isOverlay, onIssueClick, onAuthorClick, on
           />
         ))}
       </KanbanColumnContent>
-       <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-foreground text-xs h-8">
+       <Button
+         variant="ghost"
+         className="w-full justify-start text-muted-foreground hover:text-foreground text-xs h-8"
+         onClick={onAddItem}
+       >
         <Plus className="mr-2 h-3 w-3" />
         Add Item
       </Button>
@@ -256,6 +261,8 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
   })
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null)
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
+  const [newIssueDialogOpen, setNewIssueDialogOpen] = useState(false)
+  const [newIssueDefaultStatus, setNewIssueDefaultStatus] = useState("todo")
 
   // Filters
   const [filterAuthor, setFilterAuthor] = useState<string | null>(null)
@@ -446,6 +453,17 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
     setFilterAssignee(assignee)
   }
 
+  const handleAddItem = (columnId: string) => {
+    // Map column IDs to status values for the new issue dialog
+    const statusMap: Record<string, string> = {
+      [COLUMN_IDS.TODO]: "todo",
+      [COLUMN_IDS.IN_PROGRESS]: "in-progress",
+      [COLUMN_IDS.DONE]: "done"
+    }
+    setNewIssueDefaultStatus(statusMap[columnId] || "todo")
+    setNewIssueDialogOpen(true)
+  }
+
   return (
     <div className="min-h-screen bg-background font-sans flex flex-col">
        <NavBar items={navItems} activeTab={projectName} />
@@ -479,7 +497,13 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
                     <Calendar className="h-4 w-4 mr-2" />
                     Manage Milestones
                   </Button>
-                  <NewIssueDialog owner={owner} repo={repo} onIssueCreated={fetchIssues} />
+                  <Button onClick={() => {
+                    setNewIssueDefaultStatus("todo")
+                    setNewIssueDialogOpen(true)
+                  }}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Issue
+                  </Button>
                </div>
             </div>
 
@@ -616,6 +640,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
                       onIssueClick={handleIssueClick}
                       onAuthorClick={handleAuthorClick}
                       onAssigneeClick={handleAssigneeClick}
+                      onAddItem={() => handleAddItem(columnId)}
                     />
                   ))}
                 </KanbanBoard>
@@ -637,6 +662,15 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
          open={detailDialogOpen}
          onOpenChange={setDetailDialogOpen}
          onIssueUpdated={handleIssueUpdated}
+       />
+
+       <NewIssueDialog
+         owner={owner}
+         repo={repo}
+         open={newIssueDialogOpen}
+         onOpenChange={setNewIssueDialogOpen}
+         onIssueCreated={fetchIssues}
+         defaultStatus={newIssueDefaultStatus}
        />
     </div>
   )

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-hook"
 import { getOctokit } from "@/lib/github"
@@ -30,15 +30,25 @@ interface NewIssueDialogProps {
   owner: string
   repo: string
   onIssueCreated: () => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  defaultStatus?: string
 }
 
-export function NewIssueDialog({ owner, repo, onIssueCreated }: NewIssueDialogProps) {
+export function NewIssueDialog({ owner, repo, onIssueCreated, open: controlledOpen, onOpenChange, defaultStatus = "todo" }: NewIssueDialogProps) {
   const { token } = useAuth()
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen
+  const setOpen = onOpenChange || setInternalOpen
+
   const [loading, setLoading] = useState(false)
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
-  const [status, setStatus] = useState("todo") // Default to Todo
+  const [status, setStatus] = useState(defaultStatus)
+
+  useEffect(() => {
+    setStatus(defaultStatus)
+  }, [defaultStatus, open])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
