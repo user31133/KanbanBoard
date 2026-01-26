@@ -29,7 +29,7 @@ interface MilestoneManagementDialogProps {
   repo: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  onMilestonesUpdated: () => void
+  onMilestonesUpdated: () => void | Promise<void>
 }
 
 export function MilestoneManagementDialog({

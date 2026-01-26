@@ -26,7 +26,7 @@ interface LabelManagementDialogProps {
   repo: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  onLabelsUpdated: () => void
+  onLabelsUpdated: () => void | Promise<void>
 }
 
 export function LabelManagementDialog({

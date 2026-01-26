@@ -451,6 +451,10 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
           shouldReopen = movedItem.state === 'closed'
        }
 
+       console.log(`Moving issue #${issueNumber} to ${overContainer}`)
+       console.log(`Labels to add:`, labelsToAdd)
+       console.log(`Labels to remove:`, labelsToRemove)
+
        // 1. Remove old labels
        for (const label of labelsToRemove) {
           try {
@@ -460,8 +464,10 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
                 issue_number: issueNumber,
                 name: label
              })
-          } catch (e) {
+             console.log(`Removed label: ${label}`)
+          } catch (e: any) {
              // Ignore 404 if label didn't exist
+             console.log(`Label ${label} didn't exist or couldn't be removed:`, e.message)
           }
        }
 
@@ -473,6 +479,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
              issue_number: issueNumber,
              labels: labelsToAdd
           })
+          console.log(`Added labels:`, labelsToAdd)
        }
 
        // 3. Close or reopen the issue
@@ -494,12 +501,15 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
           console.log(`Issue #${issueNumber} reopened automatically (moved out of Done)`)
        }
 
-       // Refresh to get updated state
-       fetchIssues()
+       console.log('GitHub API calls complete, refreshing board...')
+
+       // Wait a bit for GitHub to process, then refresh
+       await new Promise(resolve => setTimeout(resolve, 300))
+       await fetchIssues()
 
     } catch (error) {
        console.error("Failed to move issue", error)
-       fetchIssues() // Revert on error
+       await fetchIssues() // Revert on error
     }
   }
 
@@ -522,8 +532,8 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
     setDetailDialogOpen(true)
   }
 
-  const handleIssueUpdated = () => {
-    fetchIssues()
+  const handleIssueUpdated = async () => {
+    await fetchIssues()
   }
 
   const handleAuthorClick = (author: string) => {

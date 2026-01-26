@@ -72,7 +72,7 @@ interface IssueDetailDialogProps {
   repo: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  onIssueUpdated: () => void
+  onIssueUpdated: () => void | Promise<void>
 }
 
 export function IssueDetailDialog({
@@ -264,10 +264,46 @@ export function IssueDetailDialog({
         issue_number: currentIssue.number,
         name: labelName,
       })
+      console.log('Label removed:', labelName)
       await refreshIssue()
     } catch (error) {
       console.error("Failed to remove label", error)
       alert("Failed to remove label")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleChangeDepartment = async (newDepartment: string) => {
+    if (!token || !currentIssue) return
+    setLoading(true)
+    try {
+      const octokit = getOctokit(token)
+
+      // Remove current department if exists
+      if (currentDepartment) {
+        console.log('Removing current department:', currentDepartment.name)
+        await octokit.rest.issues.removeLabel({
+          owner,
+          repo,
+          issue_number: currentIssue.number,
+          name: currentDepartment.name,
+        })
+      }
+
+      // Add new department
+      console.log('Adding new department:', newDepartment)
+      await octokit.rest.issues.addLabels({
+        owner,
+        repo,
+        issue_number: currentIssue.number,
+        labels: [newDepartment],
+      })
+
+      await refreshIssue()
+    } catch (error) {
+      console.error("Failed to change department", error)
+      alert("Failed to change department")
     } finally {
       setLoading(false)
     }
@@ -524,15 +560,14 @@ export function IssueDetailDialog({
                     <button
                       key={dept.name}
                       type="button"
-                      onClick={(e) => {
-                        e.preventDefault()
+                      onClick={async () => {
+                        console.log('Department clicked:', dept.name, 'isSelected:', isSelected)
                         if (isSelected) {
-                          handleRemoveLabel(dept.name)
+                          console.log('Removing department:', dept.name)
+                          await handleRemoveLabel(dept.name)
                         } else {
-                          if (currentDepartment) {
-                            handleRemoveLabel(currentDepartment.name)
-                          }
-                          handleAddLabel(dept.name)
+                          console.log('Changing to department:', dept.name)
+                          await handleChangeDepartment(dept.name)
                         }
                       }}
                       disabled={loading}

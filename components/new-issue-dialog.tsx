@@ -29,7 +29,7 @@ import { Loader2, Plus } from "lucide-react"
 interface NewIssueDialogProps {
   owner: string
   repo: string
-  onIssueCreated: () => void
+  onIssueCreated: () => void | Promise<void>
   open?: boolean
   onOpenChange?: (open: boolean) => void
   defaultStatus?: string
