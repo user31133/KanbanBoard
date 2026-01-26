@@ -452,17 +452,12 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        }
 
        console.log(`Moving issue #${issueNumber} to ${overContainer}`)
-       console.log(`Current labels:`, movedItem.labels.map(l => l.name))
        console.log(`Labels to add:`, labelsToAdd)
        console.log(`Labels to remove:`, labelsToRemove)
 
-       // 1. Remove old labels (only if they exist on the issue)
-       const existingLabelNames = movedItem.labels.map(l => l.name)
-       const labelsToActuallyRemove = labelsToRemove.filter(label => existingLabelNames.includes(label))
-
-       console.log(`Labels that will actually be removed:`, labelsToActuallyRemove)
-
-       for (const label of labelsToActuallyRemove) {
+       // 1. Remove old labels - just attempt to remove them
+       // GitHub will return 404 if they don't exist, which we'll ignore
+       for (const label of labelsToRemove) {
           try {
              await octokit.rest.issues.removeLabel({
                 owner,
@@ -470,9 +465,14 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
                 issue_number: issueNumber,
                 name: label
              })
-             console.log(`Removed label: ${label}`)
+             console.log(`✓ Removed label: ${label}`)
           } catch (e: any) {
-             console.error(`Failed to remove label ${label}:`, e.message)
+             // Silently ignore 404 errors (label doesn't exist)
+             if (e.status !== 404) {
+               console.error(`Failed to remove label ${label}:`, e.message)
+             } else {
+               console.log(`✓ Label ${label} already removed or doesn't exist`)
+             }
           }
        }
 
@@ -508,8 +508,8 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
        console.log('GitHub API calls complete, refreshing board...')
 
-       // Wait a bit for GitHub to process, then refresh
-       await new Promise(resolve => setTimeout(resolve, 300))
+       // Wait for GitHub to process all changes before refreshing
+       await new Promise(resolve => setTimeout(resolve, 500))
        await fetchIssues()
 
     } catch (error) {

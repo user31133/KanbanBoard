@@ -264,11 +264,17 @@ export function IssueDetailDialog({
         issue_number: currentIssue.number,
         name: labelName,
       })
-      console.log('Label removed:', labelName)
+      console.log('✓ Label removed:', labelName)
       await refreshIssue()
-    } catch (error) {
-      console.error("Failed to remove label", error)
-      alert("Failed to remove label")
+    } catch (error: any) {
+      // Silently ignore 404 errors (label doesn't exist)
+      if (error.status === 404) {
+        console.log(`✓ Label ${labelName} already removed or doesn't exist`)
+        await refreshIssue()
+      } else {
+        console.error("Failed to remove label", error)
+        alert("Failed to remove label")
+      }
     } finally {
       setLoading(false)
     }
@@ -298,10 +304,10 @@ export function IssueDetailDialog({
             issue_number: currentIssue.number,
             name: currentDepartment.name,
           })
-          console.log('✓ Current department removed successfully')
-        } catch (removeError: any) {
-          console.error('Failed to remove current department:', removeError)
-          // Continue anyway - the label might not exist
+          console.log('✓ Current department removed')
+        } catch {
+          // Ignore errors - label might not exist or already removed
+          console.log('✓ Skipped removal (label may not exist)')
         }
       }
 
