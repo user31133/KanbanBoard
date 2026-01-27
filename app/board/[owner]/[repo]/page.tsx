@@ -313,7 +313,12 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
   const [filterAssignee, setFilterAssignee] = useState<string | null>(null)
 
   const fetchIssues = useCallback(async () => {
-      if (!token) return
+      if (!token) {
+        console.log("fetchIssues: No token, skipping")
+        return
+      }
+
+      console.log("=== Fetching Issues ===")
       setLoading(true)
       try {
         const octokit = getOctokit(token)
@@ -339,7 +344,12 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
         ])
 
         const fetchedIssues = [...openResponse.data, ...closedResponse.data] as Issue[]
-        console.log("Fetched issues:", fetchedIssues.length, "(open + closed)")
+        console.log(`✓ Fetched ${fetchedIssues.length} issues (${openResponse.data.length} open, ${closedResponse.data.length} closed)`)
+
+        if (fetchedIssues.length === 0) {
+          console.warn("⚠ No issues found in repository")
+        }
+
         setIssues(fetchedIssues)
 
         // Organize into columns
@@ -378,10 +388,13 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
         })
 
         setColumns(newColumns)
+        console.log("✓ Columns updated")
         setLoading(false)
+        console.log("=== Fetch Complete ===\n")
 
       } catch (error) {
-        console.error("Failed to fetch issues", error)
+        console.error("❌ Failed to fetch issues:", error)
+        // Don't clear columns on error - keep showing existing data
         setLoading(false)
       }
   }, [token, owner, repo, filterAuthor, filterMilestone, filterLabel, filterAssignee])
@@ -427,12 +440,23 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        const octokit = getOctokit(token)
        const issueNumber = movedItem.number
 
-       // Determine labels to add/remove
-       // Simple logic:
-       // To Do -> Remove 'status:in-progress', 'status:done', reopen if closed
-       // In Progress -> Add 'status:in-progress', Remove 'status:done', reopen if closed
-       // Done -> Add 'status:done', Remove 'status:in-progress', CLOSE the issue
+       console.log(`\n=== Moving Issue #${issueNumber} ===`)
+       console.log(`From: ${activeContainer} -> To: ${overContainer}`)
 
+       // First, fetch the current issue state from GitHub to get accurate label data
+       console.log('Fetching current issue state from GitHub...')
+       const currentIssueResponse = await octokit.rest.issues.get({
+          owner,
+          repo,
+          issue_number: issueNumber,
+       })
+       const currentIssue = currentIssueResponse.data
+       const currentLabels = currentIssue.labels.map((l: any) => l.name)
+
+       console.log(`Current labels on GitHub:`, currentLabels)
+       console.log(`Current state:`, currentIssue.state)
+
+       // Determine labels to add/remove based on target column
        const labelsToRemove: string[] = []
        const labelsToAdd: string[] = []
        let shouldClose = false
@@ -441,26 +465,23 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        if (overContainer === COLUMN_IDS.IN_PROGRESS) {
           labelsToAdd.push('status:in-progress')
           labelsToRemove.push('status:done')
-          shouldReopen = movedItem.state === 'closed'
+          shouldReopen = currentIssue.state === 'closed'
        } else if (overContainer === COLUMN_IDS.DONE) {
           labelsToAdd.push('status:done')
           labelsToRemove.push('status:in-progress')
-          shouldClose = movedItem.state === 'open'
+          shouldClose = currentIssue.state === 'open'
        } else {
           labelsToRemove.push('status:in-progress', 'status:done')
-          shouldReopen = movedItem.state === 'closed'
+          shouldReopen = currentIssue.state === 'closed'
        }
 
-       console.log(`Moving issue #${issueNumber} to ${overContainer}`)
-       console.log(`Current issue labels:`, movedItem.labels.map(l => l.name))
-       console.log(`Labels to add:`, labelsToAdd)
-       console.log(`Labels to remove:`, labelsToRemove)
+       console.log(`Target labels to add:`, labelsToAdd)
+       console.log(`Target labels to remove:`, labelsToRemove)
 
        // 1. Remove old labels - only remove labels that actually exist on the issue
-       const existingLabelNames = movedItem.labels.map(l => l.name)
-       const labelsToActuallyRemove = labelsToRemove.filter(label => existingLabelNames.includes(label))
+       const labelsToActuallyRemove = labelsToRemove.filter(label => currentLabels.includes(label))
 
-       console.log(`Labels that will be removed:`, labelsToActuallyRemove)
+       console.log(`Labels that will actually be removed:`, labelsToActuallyRemove)
 
        for (const label of labelsToActuallyRemove) {
           try {
@@ -477,15 +498,21 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
           }
        }
 
-       // 2. Add new labels
-       if (labelsToAdd.length > 0) {
+       // 2. Add new labels - only add labels that don't already exist
+       const labelsToActuallyAdd = labelsToAdd.filter(label => !currentLabels.includes(label))
+
+       console.log(`Labels that will actually be added:`, labelsToActuallyAdd)
+
+       if (labelsToActuallyAdd.length > 0) {
           await octokit.rest.issues.addLabels({
              owner,
              repo,
              issue_number: issueNumber,
-             labels: labelsToAdd
+             labels: labelsToActuallyAdd
           })
-          console.log(`Added labels:`, labelsToAdd)
+          console.log(`✓ Added labels:`, labelsToActuallyAdd)
+       } else {
+          console.log(`No labels to add (already exist)`)
        }
 
        // 3. Close or reopen the issue
@@ -511,9 +538,9 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
        // Wait for GitHub to process all changes before refreshing
        // GitHub's eventual consistency means we need to wait a bit
-       await new Promise(resolve => setTimeout(resolve, 1000))
+       await new Promise(resolve => setTimeout(resolve, 800))
        await fetchIssues()
-       console.log('✓ Board refreshed successfully')
+       console.log('✓ Board refreshed successfully\n')
 
     } catch (error) {
        console.error("Failed to move issue:", error)

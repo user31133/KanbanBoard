@@ -75,18 +75,23 @@ export function NewIssueDialog({ owner, repo, onIssueCreated, open: controlledOp
         labels
       })
 
-      console.log("Issue created successfully:", newIssue.data)
+      console.log("✓ Issue created successfully:", newIssue.data.number)
 
-      // Reset form
+      // Wait for GitHub to process the new issue
+      console.log("Waiting for GitHub to index new issue...")
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      // Refresh board data
+      console.log("Refreshing board after issue creation...")
+      await onIssueCreated()
+
+      // Reset form and close dialog
       setTitle("")
       setDescription("")
       setStatus("todo")
-
-      // Refresh board data immediately
-      await onIssueCreated()
-
-      // Close dialog after refresh
       setOpen(false)
+
+      console.log("✓ Issue creation flow complete")
 
     } catch (error) {
       console.error("Failed to create issue", error)
