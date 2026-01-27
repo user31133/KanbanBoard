@@ -534,11 +534,46 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
           console.log(`Issue #${issueNumber} reopened automatically (moved out of Done)`)
        }
 
-       console.log('GitHub API calls complete, refreshing board...')
+       console.log('GitHub API calls complete, verifying changes...')
 
-       // Wait for GitHub to process all changes before refreshing
-       // GitHub's eventual consistency means we need to wait a bit
-       await new Promise(resolve => setTimeout(resolve, 800))
+       // Verify that GitHub has processed the changes by checking the issue again
+       let verificationAttempts = 0
+       const maxAttempts = 5
+       let changesVerified = false
+
+       while (verificationAttempts < maxAttempts && !changesVerified) {
+          await new Promise(resolve => setTimeout(resolve, 600))
+          verificationAttempts++
+
+          try {
+             const verifyResponse = await octokit.rest.issues.get({
+                owner,
+                repo,
+                issue_number: issueNumber,
+             })
+             const verifyLabels = verifyResponse.data.labels.map((l: any) => l.name)
+
+             console.log(`Verification attempt ${verificationAttempts}: labels are`, verifyLabels)
+
+             // Check if the expected labels are present
+             const hasExpectedLabels = labelsToActuallyAdd.every(label => verifyLabels.includes(label))
+             const missingOldLabels = labelsToActuallyRemove.every(label => !verifyLabels.includes(label))
+
+             if (hasExpectedLabels && missingOldLabels) {
+                changesVerified = true
+                console.log('✓ Changes verified on GitHub')
+             } else {
+                console.log(`Waiting for GitHub to process... (attempt ${verificationAttempts}/${maxAttempts})`)
+             }
+          } catch (verifyError) {
+             console.error('Verification check failed:', verifyError)
+          }
+       }
+
+       if (!changesVerified) {
+          console.warn('⚠ Could not verify changes within timeout, refreshing anyway')
+       }
+
        await fetchIssues()
        console.log('✓ Board refreshed successfully\n')
 
