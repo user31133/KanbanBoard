@@ -452,12 +452,17 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        }
 
        console.log(`Moving issue #${issueNumber} to ${overContainer}`)
+       console.log(`Current issue labels:`, movedItem.labels.map(l => l.name))
        console.log(`Labels to add:`, labelsToAdd)
        console.log(`Labels to remove:`, labelsToRemove)
 
-       // 1. Remove old labels - just attempt to remove them
-       // GitHub will return 404 if they don't exist, which we'll ignore
-       for (const label of labelsToRemove) {
+       // 1. Remove old labels - only remove labels that actually exist on the issue
+       const existingLabelNames = movedItem.labels.map(l => l.name)
+       const labelsToActuallyRemove = labelsToRemove.filter(label => existingLabelNames.includes(label))
+
+       console.log(`Labels that will be removed:`, labelsToActuallyRemove)
+
+       for (const label of labelsToActuallyRemove) {
           try {
              await octokit.rest.issues.removeLabel({
                 owner,
@@ -467,12 +472,8 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
              })
              console.log(`✓ Removed label: ${label}`)
           } catch (e: any) {
-             // Silently ignore 404 errors (label doesn't exist)
-             if (e.status !== 404) {
-               console.error(`Failed to remove label ${label}:`, e.message)
-             } else {
-               console.log(`✓ Label ${label} already removed or doesn't exist`)
-             }
+             console.error(`Failed to remove label ${label}:`, e.message)
+             // If removal fails, log but continue
           }
        }
 
@@ -509,12 +510,16 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        console.log('GitHub API calls complete, refreshing board...')
 
        // Wait for GitHub to process all changes before refreshing
-       await new Promise(resolve => setTimeout(resolve, 500))
+       // GitHub's eventual consistency means we need to wait a bit
+       await new Promise(resolve => setTimeout(resolve, 1000))
        await fetchIssues()
+       console.log('✓ Board refreshed successfully')
 
     } catch (error) {
-       console.error("Failed to move issue", error)
-       await fetchIssues() // Revert on error
+       console.error("Failed to move issue:", error)
+       alert("Failed to move issue. Reverting changes.")
+       // Revert optimistic update by fetching fresh data
+       await fetchIssues()
     }
   }
 
