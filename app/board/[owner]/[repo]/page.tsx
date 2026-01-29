@@ -410,12 +410,12 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
   const handleMove = async (event: any) => {
     const { activeContainer, overContainer, activeIndex, overIndex } = event
-    
+
     // Optimistic Update
     const activeItems = [...columns[activeContainer]]
     const overItems = [...columns[overContainer]]
     const [movedItem] = activeItems.splice(activeIndex, 1)
-    
+
     // If moving to same container
     if (activeContainer === overContainer) {
        activeItems.splice(overIndex, 0, movedItem)
@@ -426,41 +426,52 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        return // No API call needed for reordering (GitHub doesn't support manual sort easily)
     }
 
-    // Moving to different container
-    overItems.splice(overIndex, 0, movedItem)
+    // Determine what labels to add/remove based on target column
+    let labelToAdd: string | null = null
+    let labelsToRemove: string[] = []
+    let newState = movedItem.state
+
+    if (overContainer === COLUMN_IDS.IN_PROGRESS) {
+       labelToAdd = 'status:in-progress'
+       labelsToRemove = ['status:done']
+       if (movedItem.state === 'closed') newState = 'open'
+    } else if (overContainer === COLUMN_IDS.DONE) {
+       labelToAdd = 'status:done'
+       labelsToRemove = ['status:in-progress']
+       if (movedItem.state === 'open') newState = 'closed'
+    } else {
+       // Moving to TODO - remove all status labels
+       labelsToRemove = ['status:in-progress', 'status:done']
+       if (movedItem.state === 'closed') newState = 'open'
+    }
+
+    // Update the item's labels and state locally (optimistic update of data)
+    const updatedLabels = movedItem.labels
+      .filter(l => !labelsToRemove.includes(l.name))
+    if (labelToAdd && !updatedLabels.some(l => l.name === labelToAdd)) {
+      updatedLabels.push({ id: Date.now(), name: labelToAdd, color: '0366d6' })
+    }
+
+    const updatedItem = { ...movedItem, labels: updatedLabels, state: newState }
+
+    // Update columns with the updated item
+    overItems.splice(overIndex, 0, updatedItem)
     setColumns({
        ...columns,
        [activeContainer]: activeItems,
        [overContainer]: overItems
     })
 
-    // API Call
+    // Also update the issues array so clicking on the item shows correct data
+    setIssues(prev => prev.map(i => i.id === movedItem.id ? updatedItem : i))
+
+    // API Call (fire and forget - we trust the optimistic update)
     if (!token) return
     try {
        const octokit = getOctokit(token)
        const issueNumber = movedItem.number
 
        console.log(`Moving #${issueNumber}: ${activeContainer} -> ${overContainer}`)
-
-       // Determine what labels to add/remove based on target column
-       let labelToAdd: string | null = null
-       let labelsToRemove: string[] = []
-       let shouldClose = false
-       let shouldReopen = false
-
-       if (overContainer === COLUMN_IDS.IN_PROGRESS) {
-          labelToAdd = 'status:in-progress'
-          labelsToRemove = ['status:done']
-          shouldReopen = movedItem.state === 'closed'
-       } else if (overContainer === COLUMN_IDS.DONE) {
-          labelToAdd = 'status:done'
-          labelsToRemove = ['status:in-progress']
-          shouldClose = movedItem.state === 'open'
-       } else {
-          // Moving to TODO - remove all status labels
-          labelsToRemove = ['status:in-progress', 'status:done']
-          shouldReopen = movedItem.state === 'closed'
-       }
 
        // 1. Remove old labels (ignore 404 errors - label might not exist)
        for (const label of labelsToRemove) {
@@ -477,15 +488,12 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        }
 
        // 3. Close or reopen if needed
-       if (shouldClose) {
-          await octokit.rest.issues.update({ owner, repo, issue_number: issueNumber, state: 'closed' })
-       } else if (shouldReopen) {
-          await octokit.rest.issues.update({ owner, repo, issue_number: issueNumber, state: 'open' })
+       if (newState !== movedItem.state) {
+          await octokit.rest.issues.update({ owner, repo, issue_number: issueNumber, state: newState as 'open' | 'closed' })
        }
 
-       // Brief delay then refresh
-       await new Promise(resolve => setTimeout(resolve, 300))
-       await fetchIssues()
+       console.log(`✓ Issue #${issueNumber} moved successfully`)
+       // Don't fetch - trust the optimistic update
 
     } catch (error) {
        console.error("Failed to move issue:", error)
