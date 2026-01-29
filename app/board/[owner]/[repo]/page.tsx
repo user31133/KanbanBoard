@@ -440,142 +440,52 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        const octokit = getOctokit(token)
        const issueNumber = movedItem.number
 
-       console.log(`\n=== Moving Issue #${issueNumber} ===`)
-       console.log(`From: ${activeContainer} -> To: ${overContainer}`)
+       console.log(`Moving #${issueNumber}: ${activeContainer} -> ${overContainer}`)
 
-       // First, fetch the current issue state from GitHub to get accurate label data
-       console.log('Fetching current issue state from GitHub...')
-       const currentIssueResponse = await octokit.rest.issues.get({
-          owner,
-          repo,
-          issue_number: issueNumber,
-       })
-       const currentIssue = currentIssueResponse.data
-       const currentLabels = currentIssue.labels.map((l: any) => l.name)
-
-       console.log(`Current labels on GitHub:`, currentLabels)
-       console.log(`Current state:`, currentIssue.state)
-
-       // Determine labels to add/remove based on target column
-       const labelsToRemove: string[] = []
-       const labelsToAdd: string[] = []
+       // Determine what labels to add/remove based on target column
+       let labelToAdd: string | null = null
+       let labelsToRemove: string[] = []
        let shouldClose = false
        let shouldReopen = false
 
        if (overContainer === COLUMN_IDS.IN_PROGRESS) {
-          labelsToAdd.push('status:in-progress')
-          labelsToRemove.push('status:done')
-          shouldReopen = currentIssue.state === 'closed'
+          labelToAdd = 'status:in-progress'
+          labelsToRemove = ['status:done']
+          shouldReopen = movedItem.state === 'closed'
        } else if (overContainer === COLUMN_IDS.DONE) {
-          labelsToAdd.push('status:done')
-          labelsToRemove.push('status:in-progress')
-          shouldClose = currentIssue.state === 'open'
+          labelToAdd = 'status:done'
+          labelsToRemove = ['status:in-progress']
+          shouldClose = movedItem.state === 'open'
        } else {
-          labelsToRemove.push('status:in-progress', 'status:done')
-          shouldReopen = currentIssue.state === 'closed'
+          // Moving to TODO - remove all status labels
+          labelsToRemove = ['status:in-progress', 'status:done']
+          shouldReopen = movedItem.state === 'closed'
        }
 
-       console.log(`Target labels to add:`, labelsToAdd)
-       console.log(`Target labels to remove:`, labelsToRemove)
-
-       // 1. Remove old labels - only remove labels that actually exist on the issue
-       const labelsToActuallyRemove = labelsToRemove.filter(label => currentLabels.includes(label))
-
-       console.log(`Labels that will actually be removed:`, labelsToActuallyRemove)
-
-       for (const label of labelsToActuallyRemove) {
+       // 1. Remove old labels (ignore 404 errors - label might not exist)
+       for (const label of labelsToRemove) {
           try {
-             await octokit.rest.issues.removeLabel({
-                owner,
-                repo,
-                issue_number: issueNumber,
-                name: label
-             })
-             console.log(`✓ Removed label: ${label}`)
-          } catch (e: any) {
-             console.error(`Failed to remove label ${label}:`, e.message)
-             // If removal fails, log but continue
+             await octokit.rest.issues.removeLabel({ owner, repo, issue_number: issueNumber, name: label })
+          } catch {
+             // Label didn't exist - that's fine
           }
        }
 
-       // 2. Add new labels - only add labels that don't already exist
-       const labelsToActuallyAdd = labelsToAdd.filter(label => !currentLabels.includes(label))
-
-       console.log(`Labels that will actually be added:`, labelsToActuallyAdd)
-
-       if (labelsToActuallyAdd.length > 0) {
-          await octokit.rest.issues.addLabels({
-             owner,
-             repo,
-             issue_number: issueNumber,
-             labels: labelsToActuallyAdd
-          })
-          console.log(`✓ Added labels:`, labelsToActuallyAdd)
-       } else {
-          console.log(`No labels to add (already exist)`)
+       // 2. Add new label
+       if (labelToAdd) {
+          await octokit.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: [labelToAdd] })
        }
 
-       // 3. Close or reopen the issue
+       // 3. Close or reopen if needed
        if (shouldClose) {
-          await octokit.rest.issues.update({
-             owner,
-             repo,
-             issue_number: issueNumber,
-             state: 'closed'
-          })
-          console.log(`Issue #${issueNumber} closed automatically (moved to Done)`)
+          await octokit.rest.issues.update({ owner, repo, issue_number: issueNumber, state: 'closed' })
        } else if (shouldReopen) {
-          await octokit.rest.issues.update({
-             owner,
-             repo,
-             issue_number: issueNumber,
-             state: 'open'
-          })
-          console.log(`Issue #${issueNumber} reopened automatically (moved out of Done)`)
+          await octokit.rest.issues.update({ owner, repo, issue_number: issueNumber, state: 'open' })
        }
 
-       console.log('GitHub API calls complete, verifying changes...')
-
-       // Verify that GitHub has processed the changes by checking the issue again
-       let verificationAttempts = 0
-       const maxAttempts = 5
-       let changesVerified = false
-
-       while (verificationAttempts < maxAttempts && !changesVerified) {
-          await new Promise(resolve => setTimeout(resolve, 600))
-          verificationAttempts++
-
-          try {
-             const verifyResponse = await octokit.rest.issues.get({
-                owner,
-                repo,
-                issue_number: issueNumber,
-             })
-             const verifyLabels = verifyResponse.data.labels.map((l: any) => l.name)
-
-             console.log(`Verification attempt ${verificationAttempts}: labels are`, verifyLabels)
-
-             // Check if the expected labels are present
-             const hasExpectedLabels = labelsToActuallyAdd.every(label => verifyLabels.includes(label))
-             const missingOldLabels = labelsToActuallyRemove.every(label => !verifyLabels.includes(label))
-
-             if (hasExpectedLabels && missingOldLabels) {
-                changesVerified = true
-                console.log('✓ Changes verified on GitHub')
-             } else {
-                console.log(`Waiting for GitHub to process... (attempt ${verificationAttempts}/${maxAttempts})`)
-             }
-          } catch (verifyError) {
-             console.error('Verification check failed:', verifyError)
-          }
-       }
-
-       if (!changesVerified) {
-          console.warn('⚠ Could not verify changes within timeout, refreshing anyway')
-       }
-
+       // Brief delay then refresh
+       await new Promise(resolve => setTimeout(resolve, 300))
        await fetchIssues()
-       console.log('✓ Board refreshed successfully\n')
 
     } catch (error) {
        console.error("Failed to move issue:", error)
