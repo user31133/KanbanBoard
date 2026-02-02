@@ -395,7 +395,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
       if (!skipDelayCheck) {
         const lastDragTime = parseInt(localStorage.getItem(`lastDrag_${owner}_${repo}`) || '0')
         const timeSinceLastDrag = Date.now() - lastDragTime
-        const GITHUB_SYNC_DELAY = 3000 // 3 seconds
+        const GITHUB_SYNC_DELAY = 5000 // 5 seconds (increased for GitHub eventual consistency)
 
         if (lastDragTime > 0 && timeSinceLastDrag < GITHUB_SYNC_DELAY) {
           const waitTime = GITHUB_SYNC_DELAY - timeSinceLastDrag
@@ -413,7 +413,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
         // Clean up old localStorage entry (only if we checked the delay)
         if (!skipDelayCheck) {
           const lastDragTime = parseInt(localStorage.getItem(`lastDrag_${owner}_${repo}`) || '0')
-          if (lastDragTime && Date.now() - lastDragTime > 10000) {
+          if (lastDragTime && Date.now() - lastDragTime > 15000) { // 15 seconds
             localStorage.removeItem(`lastDrag_${owner}_${repo}`)
           }
         }
@@ -440,6 +440,14 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
         const fetchedIssues = [...openResponse.data, ...closedResponse.data] as Issue[]
         console.log(`✓ Fetched ${fetchedIssues.length} issues (${openResponse.data.length} open, ${closedResponse.data.length} closed)`)
+
+        // Debug: Log labels for each issue
+        fetchedIssues.forEach(issue => {
+          const statusLabels = issue.labels.filter(l => l.name.startsWith('status:'))
+          if (statusLabels.length > 0) {
+            console.log(`  Issue #${issue.number}: labels = [${statusLabels.map(l => l.name).join(', ')}]`)
+          }
+        })
 
         setIssues(fetchedIssues)
         setColumns(organizeIssues(fetchedIssues))
@@ -648,7 +656,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
     const storageTime = parseInt(localStorage.getItem(`lastDrag_${owner}_${repo}`) || '0')
     const lastDragTime = Math.max(refTime, storageTime)
     const timeSinceLastDrag = Date.now() - lastDragTime
-    const GITHUB_SYNC_DELAY = 3000 // 3 seconds
+    const GITHUB_SYNC_DELAY = 5000 // 5 seconds (increased for GitHub eventual consistency)
 
     if (lastDragTime > 0 && timeSinceLastDrag < GITHUB_SYNC_DELAY) {
       const waitTime = GITHUB_SYNC_DELAY - timeSinceLastDrag
