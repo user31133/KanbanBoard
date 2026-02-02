@@ -342,6 +342,48 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
     return newColumns
   }, [filterAuthor, filterMilestone, filterLabel, filterAssignee])
 
+  // Ensure required status labels exist in the repository
+  const ensureStatusLabels = useCallback(async () => {
+    if (!token) return
+
+    try {
+      const octokit = getOctokit(token)
+      const requiredLabels = [
+        { name: 'status:in-progress', color: '0366d6', description: 'Issue is in progress' },
+        { name: 'status:done', color: '22863a', description: 'Issue is completed' }
+      ]
+
+      // Get existing labels
+      const { data: existingLabels } = await octokit.rest.issues.listLabelsForRepo({
+        owner,
+        repo,
+        per_page: 100
+      })
+
+      const existingLabelNames = existingLabels.map(l => l.name)
+
+      // Create missing labels
+      for (const label of requiredLabels) {
+        if (!existingLabelNames.includes(label.name)) {
+          try {
+            await octokit.rest.issues.createLabel({
+              owner,
+              repo,
+              name: label.name,
+              color: label.color,
+              description: label.description
+            })
+            console.log(`✓ Created label: ${label.name}`)
+          } catch (error) {
+            console.error(`Failed to create label ${label.name}:`, error)
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to ensure status labels:", error)
+    }
+  }, [token, owner, repo])
+
   const fetchIssues = useCallback(async () => {
       if (!token) {
         console.log("fetchIssues: No token, skipping")
@@ -390,6 +432,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
   // Initial fetch on mount
   useEffect(() => {
     if (!isAuthLoading && token) {
+      ensureStatusLabels() // Create status labels if they don't exist
       fetchIssues()
     } else if (!isAuthLoading && !token) {
        router.push('/')
@@ -491,9 +534,33 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
           }
        }
 
-       // 2. Add new label
+       // 2. Add new label (create it if it doesn't exist)
        if (labelToAdd) {
-          await octokit.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: [labelToAdd] })
+          try {
+             await octokit.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: [labelToAdd] })
+          } catch (error: any) {
+             // If label doesn't exist (422 error), create it first
+             if (error.status === 422) {
+                console.log(`Label "${labelToAdd}" doesn't exist, creating it...`)
+                try {
+                   await octokit.rest.issues.createLabel({
+                      owner,
+                      repo,
+                      name: labelToAdd,
+                      color: labelToAdd === 'status:done' ? '22863a' : '0366d6',
+                      description: labelToAdd === 'status:done' ? 'Issue is completed' : 'Issue is in progress'
+                   })
+                   // Try adding the label again
+                   await octokit.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: [labelToAdd] })
+                   console.log(`✓ Created and added label "${labelToAdd}"`)
+                } catch (createError) {
+                   console.error(`Failed to create label "${labelToAdd}":`, createError)
+                   throw createError
+                }
+             } else {
+                throw error
+             }
+          }
        }
 
        // 3. Close or reopen if needed
@@ -504,9 +571,14 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        console.log(`✓ Issue #${issueNumber} moved successfully`)
        // Don't fetch - trust the optimistic update
 
-    } catch (error) {
+    } catch (error: any) {
        console.error("Failed to move issue:", error)
-       alert("Failed to move issue. Reverting changes.")
+       const errorMessage = error.message || error.toString()
+       const detailedError = error.status
+          ? `GitHub API Error (${error.status}): ${errorMessage}`
+          : `Error: ${errorMessage}`
+
+       alert(`Failed to move issue. ${detailedError}\n\nReverting changes.`)
        // Revert optimistic update by fetching fresh data
        await fetchIssues()
     }
