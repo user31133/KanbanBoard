@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, use, useCallback } from "react"
+import { useEffect, useState, use, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-hook"
 import { getOctokit } from "@/lib/github"
@@ -312,6 +312,35 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
   const [filterLabel, setFilterLabel] = useState<string | null>(null)
   const [filterAssignee, setFilterAssignee] = useState<string | null>(null)
 
+  // Organize issues into columns based on labels and filters
+  const organizeIssues = useCallback((issuesToOrganize: Issue[]) => {
+    const newColumns: Record<string, Issue[]> = {
+      [COLUMN_IDS.TODO]: [],
+      [COLUMN_IDS.IN_PROGRESS]: [],
+      [COLUMN_IDS.DONE]: []
+    }
+
+    issuesToOrganize.forEach(issue => {
+      // Apply filters
+      if (filterAuthor && issue.user.login !== filterAuthor) return
+      if (filterMilestone && issue.milestone?.title !== filterMilestone) return
+      if (filterLabel && !issue.labels.some(l => l.name === filterLabel)) return
+      if (filterAssignee && !issue.assignees.some(a => a.login === filterAssignee)) return
+
+      const labels = issue.labels.map(l => l.name.toLowerCase())
+
+      if (labels.some(l => l.includes('done') || l.includes('complete'))) {
+        newColumns[COLUMN_IDS.DONE].push(issue)
+      } else if (labels.some(l => l.includes('progress') || l.includes('working'))) {
+        newColumns[COLUMN_IDS.IN_PROGRESS].push(issue)
+      } else {
+        newColumns[COLUMN_IDS.TODO].push(issue)
+      }
+    })
+
+    return newColumns
+  }, [filterAuthor, filterMilestone, filterLabel, filterAssignee])
+
   const fetchIssues = useCallback(async () => {
       if (!token) {
         console.log("fetchIssues: No token, skipping")
@@ -346,66 +375,45 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
         const fetchedIssues = [...openResponse.data, ...closedResponse.data] as Issue[]
         console.log(`✓ Fetched ${fetchedIssues.length} issues (${openResponse.data.length} open, ${closedResponse.data.length} closed)`)
 
-        if (fetchedIssues.length === 0) {
-          console.warn("⚠ No issues found in repository")
-        }
-
         setIssues(fetchedIssues)
-
-        // Organize into columns
-        const newColumns: Record<string, Issue[]> = {
-          [COLUMN_IDS.TODO]: [],
-          [COLUMN_IDS.IN_PROGRESS]: [],
-          [COLUMN_IDS.DONE]: []
-        }
-
-        fetchedIssues.forEach(issue => {
-          // Apply filters
-          if (filterAuthor && issue.user.login !== filterAuthor) return
-          if (filterMilestone && issue.milestone?.title !== filterMilestone) return
-          if (filterLabel && !issue.labels.some(l => l.name === filterLabel)) return
-          if (filterAssignee && !issue.assignees.some(a => a.login === filterAssignee)) return
-
-          const labels = issue.labels.map(l => l.name.toLowerCase())
-          console.log(`Issue #${issue.number}: "${issue.title}" has labels:`, labels)
-
-          if (labels.some(l => l.includes('done') || l.includes('complete'))) {
-            newColumns[COLUMN_IDS.DONE].push(issue)
-            console.log(`  -> Placed in DONE`)
-          } else if (labels.some(l => l.includes('progress') || l.includes('working'))) {
-            newColumns[COLUMN_IDS.IN_PROGRESS].push(issue)
-            console.log(`  -> Placed in IN_PROGRESS`)
-          } else {
-             newColumns[COLUMN_IDS.TODO].push(issue)
-             console.log(`  -> Placed in TODO`)
-          }
-        })
-
-        console.log("Column counts:", {
-          todo: newColumns[COLUMN_IDS.TODO].length,
-          inProgress: newColumns[COLUMN_IDS.IN_PROGRESS].length,
-          done: newColumns[COLUMN_IDS.DONE].length
-        })
-
-        setColumns(newColumns)
+        setColumns(organizeIssues(fetchedIssues))
         console.log("✓ Columns updated")
         setLoading(false)
-        console.log("=== Fetch Complete ===\n")
 
       } catch (error) {
         console.error("❌ Failed to fetch issues:", error)
-        // Don't clear columns on error - keep showing existing data
         setLoading(false)
       }
-  }, [token, owner, repo, filterAuthor, filterMilestone, filterLabel, filterAssignee])
+  }, [token, owner, repo, organizeIssues])
 
+  // Initial fetch on mount
   useEffect(() => {
     if (!isAuthLoading && token) {
       fetchIssues()
     } else if (!isAuthLoading && !token) {
        router.push('/')
     }
-  }, [token, isAuthLoading, router, fetchIssues])
+    // Only run on mount and auth changes - NOT when fetchIssues changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, isAuthLoading, router, owner, repo])
+
+  // Re-organize columns when filters change (no API call needed)
+  // We use a ref to track the previous filter values
+  const prevFiltersRef = useRef({ filterAuthor, filterMilestone, filterLabel, filterAssignee })
+
+  useEffect(() => {
+    const prevFilters = prevFiltersRef.current
+    const filtersChanged =
+      prevFilters.filterAuthor !== filterAuthor ||
+      prevFilters.filterMilestone !== filterMilestone ||
+      prevFilters.filterLabel !== filterLabel ||
+      prevFilters.filterAssignee !== filterAssignee
+
+    if (filtersChanged && issues.length > 0) {
+      setColumns(organizeIssues(issues))
+      prevFiltersRef.current = { filterAuthor, filterMilestone, filterLabel, filterAssignee }
+    }
+  }, [issues, organizeIssues, filterAuthor, filterMilestone, filterLabel, filterAssignee])
 
 
   const handleMove = async (event: any) => {
@@ -524,6 +532,14 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
   const handleIssueUpdated = async () => {
     await fetchIssues()
+  }
+
+  const handleIssueCreated = (newIssue: Issue) => {
+    // Add new issue to the beginning of the issues array
+    setIssues(prev => [newIssue, ...prev])
+
+    // Re-organize columns with the new issue included
+    setColumns(organizeIssues([newIssue, ...issues]))
   }
 
   const handleAuthorClick = (author: string) => {
@@ -750,7 +766,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
          repo={repo}
          open={newIssueDialogOpen}
          onOpenChange={setNewIssueDialogOpen}
-         onIssueCreated={fetchIssues}
+         onIssueCreated={handleIssueCreated}
          defaultStatus={newIssueDefaultStatus}
        />
 

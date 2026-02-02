@@ -26,10 +26,39 @@ import {
 } from "@/components/ui/select"
 import { Loader2, Plus } from "lucide-react"
 
+interface Issue {
+  id: number
+  number: number
+  title: string
+  state: string
+  html_url: string
+  body: string | null
+  user: {
+    login: string
+    avatar_url: string
+  }
+  labels: {
+    id: number
+    name: string
+    color: string
+  }[]
+  assignees: {
+    login: string
+    avatar_url: string
+  }[]
+  milestone: {
+    title: string
+    number: number
+    due_on: string | null
+  } | null
+  created_at: string
+  updated_at: string
+}
+
 interface NewIssueDialogProps {
   owner: string
   repo: string
-  onIssueCreated: () => void | Promise<void>
+  onIssueCreated: (newIssue: Issue) => void | Promise<void>
   open?: boolean
   onOpenChange?: (open: boolean) => void
   defaultStatus?: string
@@ -83,9 +112,9 @@ export function NewIssueDialog({ owner, repo, onIssueCreated, open: controlledOp
       setStatus("todo")
       setOpen(false)
 
-      // Small delay then refresh board
-      await new Promise(resolve => setTimeout(resolve, 300))
-      await onIssueCreated()
+      // Pass the created issue data to the callback for optimistic update
+      const newIssueData = newIssue.data as Issue
+      await onIssueCreated(newIssueData)
 
     } catch (error) {
       console.error("Failed to create issue", error)
