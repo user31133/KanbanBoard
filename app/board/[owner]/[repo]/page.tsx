@@ -549,6 +549,12 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
     // API Call (fire and forget - we trust the optimistic update)
     if (!token) return
+
+    // Record the drag time BEFORE API calls (so delay check works even if something calls fetchIssues during the async operation)
+    const now = Date.now()
+    lastDragTimeRef.current = now
+    localStorage.setItem(`lastDrag_${owner}_${repo}`, now.toString())
+
     try {
        const octokit = getOctokit(token)
        const issueNumber = movedItem.number
@@ -606,11 +612,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
        console.log(`✓ Issue #${issueNumber} moved successfully to ${overContainer}`)
        console.log(`  Final labels on issue:`, updatedItem.labels.map(l => l.name).join(', '))
-       // Record the time of this drag operation (both in ref and localStorage)
-       const now = Date.now()
-       lastDragTimeRef.current = now
-       localStorage.setItem(`lastDrag_${owner}_${repo}`, now.toString())
-       // Don't fetch - trust the optimistic update
+       // Don't fetch - trust the optimistic update (timestamp already set before API calls)
 
     } catch (error: any) {
        console.error("Failed to move issue:", error)
