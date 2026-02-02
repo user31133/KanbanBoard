@@ -72,7 +72,7 @@ interface IssueDetailDialogProps {
   repo: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  onIssueUpdated: () => void | Promise<void>
+  onIssueUpdated: (updatedIssue: Issue) => void | Promise<void>
 }
 
 export function IssueDetailDialog({
@@ -113,10 +113,11 @@ export function IssueDetailDialog({
         repo,
         issue_number: currentIssue.number,
       })
-      setCurrentIssue(response.data as Issue)
+      const updatedIssue = response.data as Issue
+      setCurrentIssue(updatedIssue)
       setTitleValue(response.data.title)
       setBodyValue(response.data.body || "")
-      onIssueUpdated()
+      onIssueUpdated(updatedIssue)
     } catch (error) {
       console.error("Failed to refresh issue", error)
     }

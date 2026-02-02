@@ -300,6 +300,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
     [COLUMN_IDS.IN_PROGRESS]: [],
     [COLUMN_IDS.DONE]: []
   })
+  const lastDragTimeRef = useRef<number>(0)
   const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null)
   const [detailDialogOpen, setDetailDialogOpen] = useState(false)
   const [newIssueDialogOpen, setNewIssueDialogOpen] = useState(false)
@@ -384,16 +385,35 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
     }
   }, [token, owner, repo])
 
-  const fetchIssues = useCallback(async () => {
+  const fetchIssues = useCallback(async (skipDelayCheck = false) => {
       if (!token) {
         console.log("fetchIssues: No token, skipping")
         return
+      }
+
+      // Check if a drag happened recently (even before page reload)
+      if (!skipDelayCheck) {
+        const lastDragTime = parseInt(localStorage.getItem(`lastDrag_${owner}_${repo}`) || '0')
+        const timeSinceLastDrag = Date.now() - lastDragTime
+        const GITHUB_SYNC_DELAY = 3000 // 3 seconds
+
+        if (timeSinceLastDrag < GITHUB_SYNC_DELAY) {
+          const waitTime = GITHUB_SYNC_DELAY - timeSinceLastDrag
+          console.log(`Waiting ${waitTime}ms for GitHub to sync recent drag operation...`)
+          await new Promise(resolve => setTimeout(resolve, waitTime))
+        }
       }
 
       console.log("=== Fetching Issues ===")
       setLoading(true)
       try {
         const octokit = getOctokit(token)
+
+        // Clean up old localStorage entry after waiting
+        const lastDragTime = parseInt(localStorage.getItem(`lastDrag_${owner}_${repo}`) || '0')
+        if (lastDragTime && Date.now() - lastDragTime > 10000) {
+          localStorage.removeItem(`lastDrag_${owner}_${repo}`)
+        }
 
         // Fetch both open and closed issues
         const [openResponse, closedResponse] = await Promise.all([
@@ -569,6 +589,10 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        }
 
        console.log(`✓ Issue #${issueNumber} moved successfully`)
+       // Record the time of this drag operation (both in ref and localStorage)
+       const now = Date.now()
+       lastDragTimeRef.current = now
+       localStorage.setItem(`lastDrag_${owner}_${repo}`, now.toString())
        // Don't fetch - trust the optimistic update
 
     } catch (error: any) {
@@ -603,8 +627,16 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
     setDetailDialogOpen(true)
   }
 
-  const handleIssueUpdated = async () => {
-    await fetchIssues()
+  const handleIssueUpdated = (updatedIssue: Issue) => {
+    // Update the issue in local state optimistically
+    setIssues(prev => {
+      const updatedIssues = prev.map(i => i.id === updatedIssue.id ? updatedIssue : i)
+      setColumns(organizeIssues(updatedIssues))
+      return updatedIssues
+    })
+
+    // Also update the selected issue if it's the one being viewed
+    setSelectedIssue(updatedIssue)
   }
 
   const handleIssueCreated = (newIssue: Issue) => {
@@ -618,6 +650,17 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
   const handleManualRefresh = async () => {
     setRefreshing(true)
+
+    // If a drag happened recently, wait for GitHub to sync (eventual consistency)
+    const timeSinceLastDrag = Date.now() - lastDragTimeRef.current
+    const GITHUB_SYNC_DELAY = 3000 // 3 seconds
+
+    if (timeSinceLastDrag < GITHUB_SYNC_DELAY) {
+      const waitTime = GITHUB_SYNC_DELAY - timeSinceLastDrag
+      console.log(`Waiting ${waitTime}ms for GitHub to sync recent drag operation...`)
+      await new Promise(resolve => setTimeout(resolve, waitTime))
+    }
+
     await fetchIssues()
     setRefreshing(false)
   }
