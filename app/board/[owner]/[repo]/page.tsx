@@ -397,10 +397,11 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
         const timeSinceLastDrag = Date.now() - lastDragTime
         const GITHUB_SYNC_DELAY = 3000 // 3 seconds
 
-        if (timeSinceLastDrag < GITHUB_SYNC_DELAY) {
+        if (lastDragTime > 0 && timeSinceLastDrag < GITHUB_SYNC_DELAY) {
           const waitTime = GITHUB_SYNC_DELAY - timeSinceLastDrag
-          console.log(`Waiting ${waitTime}ms for GitHub to sync recent drag operation...`)
+          console.log(`⏳ Waiting ${waitTime}ms for GitHub to sync recent drag operation...`)
           await new Promise(resolve => setTimeout(resolve, waitTime))
+          console.log(`✓ Wait complete, fetching from GitHub now...`)
         }
       }
 
@@ -409,10 +410,12 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
       try {
         const octokit = getOctokit(token)
 
-        // Clean up old localStorage entry after waiting
-        const lastDragTime = parseInt(localStorage.getItem(`lastDrag_${owner}_${repo}`) || '0')
-        if (lastDragTime && Date.now() - lastDragTime > 10000) {
-          localStorage.removeItem(`lastDrag_${owner}_${repo}`)
+        // Clean up old localStorage entry (only if we checked the delay)
+        if (!skipDelayCheck) {
+          const lastDragTime = parseInt(localStorage.getItem(`lastDrag_${owner}_${repo}`) || '0')
+          if (lastDragTime && Date.now() - lastDragTime > 10000) {
+            localStorage.removeItem(`lastDrag_${owner}_${repo}`)
+          }
         }
 
         // Fetch both open and closed issues
@@ -461,21 +464,10 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, isAuthLoading, router, owner, repo])
 
-  // Re-organize columns when filters change (no API call needed)
-  // We use a ref to track the previous filter values
-  const prevFiltersRef = useRef({ filterAuthor, filterMilestone, filterLabel, filterAssignee })
-
+  // Re-organize columns when issues or filters change (no API call needed)
   useEffect(() => {
-    const prevFilters = prevFiltersRef.current
-    const filtersChanged =
-      prevFilters.filterAuthor !== filterAuthor ||
-      prevFilters.filterMilestone !== filterMilestone ||
-      prevFilters.filterLabel !== filterLabel ||
-      prevFilters.filterAssignee !== filterAssignee
-
-    if (filtersChanged && issues.length > 0) {
+    if (issues.length > 0) {
       setColumns(organizeIssues(issues))
-      prevFiltersRef.current = { filterAuthor, filterMilestone, filterLabel, filterAssignee }
     }
   }, [issues, organizeIssues, filterAuthor, filterMilestone, filterLabel, filterAssignee])
 
@@ -526,7 +518,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
     const updatedItem = { ...movedItem, labels: updatedLabels, state: newState }
 
-    // Update columns with the updated item
+    // Update columns immediately for visual feedback (Kanban library needs this)
     overItems.splice(overIndex, 0, updatedItem)
     setColumns({
        ...columns,
@@ -534,7 +526,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        [overContainer]: overItems
     })
 
-    // Also update the issues array so clicking on the item shows correct data
+    // Also update the issues array so the data stays in sync
     setIssues(prev => prev.map(i => i.id === movedItem.id ? updatedItem : i))
 
     // API Call (fire and forget - we trust the optimistic update)
@@ -544,13 +536,17 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        const issueNumber = movedItem.number
 
        console.log(`Moving #${issueNumber}: ${activeContainer} -> ${overContainer}`)
+       console.log(`  Labels to remove:`, labelsToRemove)
+       console.log(`  Label to add:`, labelToAdd)
+       console.log(`  State change:`, movedItem.state, '->', newState)
 
        // 1. Remove old labels (ignore 404 errors - label might not exist)
        for (const label of labelsToRemove) {
           try {
              await octokit.rest.issues.removeLabel({ owner, repo, issue_number: issueNumber, name: label })
-          } catch {
-             // Label didn't exist - that's fine
+             console.log(`  ✓ Removed label: ${label}`)
+          } catch (error: any) {
+             console.log(`  ℹ Could not remove label "${label}": ${error.status || 'unknown error'} (probably didn't exist)`)
           }
        }
 
@@ -558,6 +554,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        if (labelToAdd) {
           try {
              await octokit.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: [labelToAdd] })
+             console.log(`  ✓ Added label: ${labelToAdd}`)
           } catch (error: any) {
              // If label doesn't exist (422 error), create it first
              if (error.status === 422) {
@@ -586,9 +583,11 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
        // 3. Close or reopen if needed
        if (newState !== movedItem.state) {
           await octokit.rest.issues.update({ owner, repo, issue_number: issueNumber, state: newState as 'open' | 'closed' })
+          console.log(`  ✓ Updated state: ${movedItem.state} -> ${newState}`)
        }
 
-       console.log(`✓ Issue #${issueNumber} moved successfully`)
+       console.log(`✓ Issue #${issueNumber} moved successfully to ${overContainer}`)
+       console.log(`  Final labels on issue:`, updatedItem.labels.map(l => l.name).join(', '))
        // Record the time of this drag operation (both in ref and localStorage)
        const now = Date.now()
        lastDragTimeRef.current = now
@@ -603,8 +602,8 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
           : `Error: ${errorMessage}`
 
        alert(`Failed to move issue. ${detailedError}\n\nReverting changes.`)
-       // Revert optimistic update by fetching fresh data
-       await fetchIssues()
+       // Revert optimistic update by fetching fresh data (skip delay since we're reverting an error)
+       await fetchIssues(true)
     }
   }
 
@@ -629,33 +628,29 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
   const handleIssueUpdated = (updatedIssue: Issue) => {
     // Update the issue in local state optimistically
-    setIssues(prev => {
-      const updatedIssues = prev.map(i => i.id === updatedIssue.id ? updatedIssue : i)
-      setColumns(organizeIssues(updatedIssues))
-      return updatedIssues
-    })
+    setIssues(prev => prev.map(i => i.id === updatedIssue.id ? updatedIssue : i))
 
     // Also update the selected issue if it's the one being viewed
     setSelectedIssue(updatedIssue)
   }
 
   const handleIssueCreated = (newIssue: Issue) => {
-    // Add new issue to the beginning of the issues array and re-organize columns
-    setIssues(prev => {
-      const updatedIssues = [newIssue, ...prev]
-      setColumns(organizeIssues(updatedIssues))
-      return updatedIssues
-    })
+    // Add new issue to the beginning of the issues array
+    setIssues(prev => [newIssue, ...prev])
   }
 
   const handleManualRefresh = async () => {
     setRefreshing(true)
 
     // If a drag happened recently, wait for GitHub to sync (eventual consistency)
-    const timeSinceLastDrag = Date.now() - lastDragTimeRef.current
+    // Check both ref and localStorage (in case of page reload)
+    const refTime = lastDragTimeRef.current
+    const storageTime = parseInt(localStorage.getItem(`lastDrag_${owner}_${repo}`) || '0')
+    const lastDragTime = Math.max(refTime, storageTime)
+    const timeSinceLastDrag = Date.now() - lastDragTime
     const GITHUB_SYNC_DELAY = 3000 // 3 seconds
 
-    if (timeSinceLastDrag < GITHUB_SYNC_DELAY) {
+    if (lastDragTime > 0 && timeSinceLastDrag < GITHUB_SYNC_DELAY) {
       const waitTime = GITHUB_SYNC_DELAY - timeSinceLastDrag
       console.log(`Waiting ${waitTime}ms for GitHub to sync recent drag operation...`)
       await new Promise(resolve => setTimeout(resolve, waitTime))
