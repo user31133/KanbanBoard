@@ -403,15 +403,30 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
       // Check if a drag happened recently (even before page reload)
       if (!skipDelayCheck) {
-        const lastDragTime = parseInt(localStorage.getItem(`lastDrag_${owner}_${repo}`) || '0')
-        const timeSinceLastDrag = Date.now() - lastDragTime
+        const storageKey = `lastDrag_${owner}_${repo}`
+        const lastDragTimeStr = localStorage.getItem(storageKey)
+        const lastDragTime = parseInt(lastDragTimeStr || '0')
+        const now = Date.now()
+        const timeSinceLastDrag = now - lastDragTime
         const GITHUB_SYNC_DELAY = 5000 // 5 seconds (increased for GitHub eventual consistency)
+
+        console.log('🔍 Delay check:', {
+          storageKey,
+          lastDragTimeStr,
+          lastDragTime,
+          now,
+          timeSinceLastDrag,
+          GITHUB_SYNC_DELAY,
+          shouldWait: lastDragTime > 0 && timeSinceLastDrag < GITHUB_SYNC_DELAY
+        })
 
         if (lastDragTime > 0 && timeSinceLastDrag < GITHUB_SYNC_DELAY) {
           const waitTime = GITHUB_SYNC_DELAY - timeSinceLastDrag
           console.log(`⏳ Waiting ${waitTime}ms for GitHub to sync recent drag operation...`)
           await new Promise(resolve => setTimeout(resolve, waitTime))
           console.log(`✓ Wait complete, fetching from GitHub now...`)
+        } else {
+          console.log('⚠️ Not waiting - lastDragTime is 0 or drag was more than 5s ago')
         }
       }
 
