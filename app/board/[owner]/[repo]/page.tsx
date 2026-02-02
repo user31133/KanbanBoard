@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-hook"
 import { getOctokit } from "@/lib/github"
 import { NavBar } from "@/components/ui/tubelight-navbar"
-import { Loader2, ArrowLeft, LayoutDashboard, Plus, Filter, X, Tag, Calendar, Settings, Building2 } from "lucide-react"
+import { Loader2, ArrowLeft, LayoutDashboard, Plus, Filter, X, Tag, Calendar, Settings, Building2, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { NewIssueDialog } from "@/components/new-issue-dialog"
 import { IssueDetailDialog } from "@/components/issue-detail-dialog"
@@ -294,6 +294,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
   const router = useRouter()
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [columns, setColumns] = useState<Record<string, Issue[]>>({
     [COLUMN_IDS.TODO]: [],
     [COLUMN_IDS.IN_PROGRESS]: [],
@@ -535,11 +536,18 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
   }
 
   const handleIssueCreated = (newIssue: Issue) => {
-    // Add new issue to the beginning of the issues array
-    setIssues(prev => [newIssue, ...prev])
+    // Add new issue to the beginning of the issues array and re-organize columns
+    setIssues(prev => {
+      const updatedIssues = [newIssue, ...prev]
+      setColumns(organizeIssues(updatedIssues))
+      return updatedIssues
+    })
+  }
 
-    // Re-organize columns with the new issue included
-    setColumns(organizeIssues([newIssue, ...issues]))
+  const handleManualRefresh = async () => {
+    setRefreshing(true)
+    await fetchIssues()
+    setRefreshing(false)
   }
 
   const handleAuthorClick = (author: string) => {
@@ -578,6 +586,15 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
                   </div>
                </div>
                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleManualRefresh}
+                    disabled={refreshing}
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
