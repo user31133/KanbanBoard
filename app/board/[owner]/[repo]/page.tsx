@@ -316,6 +316,7 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
 
   // Organize issues into columns based on labels and filters
   const organizeIssues = useCallback((issuesToOrganize: Issue[]) => {
+    console.log('🗂️ organizeIssues called with', issuesToOrganize.length, 'issues')
     const newColumns: Record<string, Issue[]> = {
       [COLUMN_IDS.TODO]: [],
       [COLUMN_IDS.IN_PROGRESS]: [],
@@ -330,16 +331,21 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
       if (filterAssignee && !issue.assignees.some(a => a.login === filterAssignee)) return
 
       const labels = issue.labels.map(l => l.name.toLowerCase())
+      const statusLabels = issue.labels.filter(l => l.name.startsWith('status:'))
 
       if (labels.some(l => l.includes('done') || l.includes('complete'))) {
         newColumns[COLUMN_IDS.DONE].push(issue)
+        console.log(`  Issue #${issue.number} -> DONE (labels: ${statusLabels.map(l => l.name).join(', ')})`)
       } else if (labels.some(l => l.includes('progress') || l.includes('working'))) {
         newColumns[COLUMN_IDS.IN_PROGRESS].push(issue)
+        console.log(`  Issue #${issue.number} -> IN_PROGRESS (labels: ${statusLabels.map(l => l.name).join(', ')})`)
       } else {
         newColumns[COLUMN_IDS.TODO].push(issue)
+        console.log(`  Issue #${issue.number} -> TODO (labels: ${statusLabels.map(l => l.name).join(', ')})`)
       }
     })
 
+    console.log(`📊 Organized: TODO=${newColumns[COLUMN_IDS.TODO].length}, IN_PROGRESS=${newColumns[COLUMN_IDS.IN_PROGRESS].length}, DONE=${newColumns[COLUMN_IDS.DONE].length}`)
     return newColumns
   }, [filterAuthor, filterMilestone, filterLabel, filterAssignee])
 
@@ -390,6 +396,10 @@ export default function BoardPage({ params }: { params: Promise<{ owner: string,
         console.log("fetchIssues: No token, skipping")
         return
       }
+
+      // Debug: Log who called fetchIssues
+      console.log('📞 fetchIssues called, skipDelayCheck =', skipDelayCheck)
+      console.trace('Call stack:')
 
       // Check if a drag happened recently (even before page reload)
       if (!skipDelayCheck) {
